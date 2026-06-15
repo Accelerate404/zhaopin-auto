@@ -17,10 +17,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import boss.BossScheduled;
-import job51.Job51Scheduled;
-import lagou.LagouScheduled;
-import liepin.LiepinScheduled;
 import zhilian.ZhilianScheduled;
 
 @Slf4j
@@ -35,7 +31,7 @@ public class JobUtils {
 
     public static String appendListParam(String name, List<String> values) {
         return Optional.ofNullable(values)
-                .filter(list -> !list.isEmpty() && !Objects.equals(UNLIMITED_CODE, list.getFirst()))
+                .filter(list -> !list.isEmpty() && !Objects.equals(UNLIMITED_CODE, list.get(0)))
                 .map(list -> "&" + name + "=" + String.join(",", list))
                 .orElse("");
     }
@@ -55,29 +51,12 @@ public class JobUtils {
 
     public static void runScheduled(Platform platform) {
         String platformName = platform.getPlatformName();
-        switch (platform) {
-            case BOSS -> {
-                BossScheduled.postJobs();
-                scheduleTaskAtTime(platformName, 10, 0, BossScheduled::postJobs);
-                scheduleTaskAtTime(platformName, 15, 0, BossScheduled::postJobs);
-            }
-            case JOB51 -> {
-                Job51Scheduled.postJobs();
-                scheduleTaskAtTime(platformName, 10, 0, Job51Scheduled::postJobs);
-            }
-            case LIEPIN -> {
-                LiepinScheduled.postJobs();
-                scheduleTaskAtTime(platformName, 10, 0, LiepinScheduled::postJobs);
-            }
-            case ZHILIAN -> {
-                ZhilianScheduled.postJobs();
-                scheduleTaskAtTime(platformName, 10, 0, ZhilianScheduled::postJobs);
-            }
-            case LAGOU -> {
-                LagouScheduled.postJobs();
-                scheduleTaskAtTime(platformName, 10, 0, LagouScheduled::postJobs);
-            }
-            default -> log.warn("未定义的平台任务：{}", platformName);
+        if (platform == Platform.ZHILIAN) {
+            ZhilianScheduled.postJobs();
+            scheduleTaskAtTime(platformName, 10, 0, ZhilianScheduled::postJobs);
+            scheduleTaskAtTime(platformName, 15, 0, ZhilianScheduled::postJobs);
+        } else {
+            log.warn("仅支持智联招聘平台：{}", platformName);
         }
     }
 

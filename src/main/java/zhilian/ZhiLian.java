@@ -1,14 +1,17 @@
 package zhilian;
 
 import org.openqa.selenium.*;
+import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ai.AiService;
 import utils.Job;
 import utils.JobUtils;
 import utils.SeleniumUtil;
 
 import java.util.ArrayList;
+import java.util.Set;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -19,11 +22,9 @@ import static utils.JobUtils.formatDuration;
 
 /**
  * @author loks666
- * 项目链接: <a href="https://github.com/loks666/get_jobs">https://github.com/loks666/get_jobs</a>
  */
 public class ZhiLian {
     static {
-        // 在类加载时就设置日志文件名，确保Logger初始化时能获取到正确的属性
         System.setProperty("log.name", "zhilian");
     }
     
@@ -48,7 +49,7 @@ public class ZhiLian {
             submitJobs(keyword);
 
         });
-        log.info(resultList.isEmpty() ? "未投递新的岗位..." : "新投递公司如下:\n{}", resultList.stream().map(Object::toString).collect(Collectors.joining("\n")));
+        log.info(resultList.isEmpty() ? "未投递新的岗位.." : "新投递公司如下:\n{}", resultList.stream().map(Object::toString).collect(Collectors.joining("\n")));
         printResult();
     }
 
@@ -60,10 +61,8 @@ public class ZhiLian {
         CHROME_DRIVER.close();
         CHROME_DRIVER.quit();
         
-        // 确保所有日志都被刷新到文件
         try {
-            Thread.sleep(1000); // 等待1秒确保日志写入完成
-            // 强制刷新日志 - 使用正确的方法
+            Thread.sleep(1000);
             ch.qos.logback.classic.LoggerContext loggerContext = (ch.qos.logback.classic.LoggerContext) org.slf4j.LoggerFactory.getILoggerFactory();
             loggerContext.stop();
         } catch (InterruptedException e) {
@@ -79,78 +78,349 @@ public class ZhiLian {
                 "&p=" + page;
     }
 
+    private static final int MAX_COLLECT = 200;
+
     private static void submitJobs(String keyword) {
-        if (isLimit) {
-            return;
-        }
-        WAIT.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//div[contains(@class, 'joblist-box__item')]")));
-        setMaxPages();
-        for (int i = 1; i <= maxPage; i++) {
-            if (i != 1) {
-                CHROME_DRIVER.get(getSearchUrl(keyword, i));
-            }
-            log.info("开始投递【{}】关键词，第【{}】页...", keyword, i);
-            // 等待岗位出现
-            try {
-                WAIT.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//div[@class='positionlist']")));
-            } catch (Exception ignore) {
-                CHROME_DRIVER.navigate().refresh();
-                SeleniumUtil.sleep(1);
-            }
-            // 全选
-            try {
-                WebElement allSelect = WAIT.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//i[@class='betch__checkall__checkbox']")));
-                allSelect.click();
-            } catch (Exception e) {
-                log.info("没有全选按钮，程序退出...");
-                continue;
-            }
-            // 投递
-            WebElement submit = WAIT.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//button[@class='betch__button']")));
-            submit.click();
-            if (checkIsLimit()) {
-                break;
-            }
-            SeleniumUtil.sleep(1);
-            // 切换到新的标签页
-            ArrayList<String> tabs = new ArrayList<>(CHROME_DRIVER.getWindowHandles());
-            CHROME_DRIVER.switchTo().window(tabs.get(tabs.size() - 1));
-            //关闭弹框
-            try {
-                WebElement result = CHROME_DRIVER.findElement(By.xpath("//div[@class='deliver-dialog']"));
-                if (result.getText().contains("申请成功")) {
-                    log.info("岗位申请成功！");
+        if (isLimit) return;
+        try {
+            setMaxPages();
+
+            // Phase 1: Fast collect up to MAX_COLLECT job URLs from list pages
+            List<String[]> allJobs = new ArrayList<>();
+            int collected = 0;
+            for (int page = 1; page <= maxPage && collected < MAX_COLLECT; page++) {
+                CHROME_DRIVER.get(getSearchUrl(keyword, page));
+                SeleniumUtil.sleep(3);
+                log.info("[Collect] keyword [{}] page {} (collected so far: {})", keyword, page, collected);
+                // Debug: log first card info
+                if (page == 1) {
+                    try {
+                        var firstCards = CHROME_DRIVER.findElements(By.xpath("//div[contains(@class, 'joblist-box__item')]"));
+                        log.info("[Debug] joblist-box__item count: {}", firstCards.size());
+                        if (!firstCards.isEmpty()) {
+                            String fcText = firstCards.get(0).getText().substring(0, Math.min(100, firstCards.get(0).getText().length()));
+                            log.info("[Debug] first card text: {}", fcText);
+                            var nameLink = firstCards.get(0).findElements(By.xpath(".//a[contains(@class, 'jobinfo__name')]"));
+                            log.info("[Debug] jobinfo__name links: {}", nameLink.size());
+                        }
+                    } catch (Exception e) { log.info("[Debug] error: {}", e.getMessage()); }
                 }
-            } catch (Exception e) {
-                log.error("关闭投递弹框失败...");
-            }
-            try {
-                WebElement close = CHROME_DRIVER.findElement(By.xpath("//img[@title='close-icon']"));
-                close.click();
-            } catch (Exception e) {
-                if (checkIsLimit()) {
+
+                List<WebElement> jobCards;
+                try {
+                    WAIT.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//div[contains(@class, 'joblist-box__item') and contains(@class, 'clearfix')]")));
+                    jobCards = CHROME_DRIVER.findElements(By.xpath("//div[contains(@class, 'joblist-box__item') and contains(@class, 'clearfix')]"));
+                } catch (Exception e) {
+                    log.info("[Collect] No cards on page {}, stop", page);
                     break;
                 }
-            }
-            try {
-                // 投递相似职位
-                WebElement checkButton = CHROME_DRIVER.findElement(By.xpath("//div[contains(@class, 'applied-select-all')]//input"));
-                if (!checkButton.isSelected()) {
-                    checkButton.click();
+                if (jobCards.isEmpty()) break;
+
+                for (WebElement card : jobCards) {
+                    if (collected >= MAX_COLLECT) break;
+                    try {
+                        String jName = safeGetText(card, ".//a[contains(@class, 'jobinfo__name')]");
+                        if (jName.isEmpty()) jName = safeGetText(card, ".//*[contains(@class,'jobname')]");
+                        String jCompany = safeGetText(card, ".//a[contains(@class,'companyinfo__name')]");
+                        if (jCompany.isEmpty()) jCompany = safeGetText(card, ".//*[contains(@class,'companyinfo')]");
+                        // Read all tag spans for salary info
+                        String jSalary = "";
+                        String jLocation = "";
+                        try {
+                            var tags = card.findElements(By.xpath(".//*[contains(@class,'joblist-box__item-tag')]"));
+                            for (var tag : tags) {
+                                String t = tag.getText().trim();
+                                if (t.contains("元") || t.contains("薪")) jSalary = t;
+                            }
+                        } catch (Exception ignore) {}
+                        try {
+                            var infos = card.findElements(By.xpath(".//*[contains(@class,'jobinfo__other-info-item')]"));
+                            if (infos.size() > 0) jLocation = infos.get(0).getText().trim();
+                        } catch (Exception ignore) {}
+
+                        String jUrl = "";
+                        try {
+                            WebElement link = card.findElement(By.xpath(".//a[contains(@class, 'jobinfo__name')]"));
+                            jUrl = link.getAttribute("href");
+                        } catch (Exception ignore) {}
+
+                        // Quick filter: skip already applied
+                        String cardText = card.getText();
+                        if (cardText.contains("\u5df2\u6295\u9012") || cardText.contains("\u5df2\u7533\u8bf7")) {
+                            continue;
+                        }
+
+                        if (jName.isEmpty()) jName = "unknown";
+                        if (jUrl != null && !jUrl.isEmpty()) {
+                            allJobs.add(new String[]{jName, jCompany, jSalary, jLocation, jUrl});
+                            collected++;
+                        }
+                    } catch (Exception ignore) {}
                 }
-                List<WebElement> jobs = CHROME_DRIVER.findElements(By.xpath("//div[@class='recommend-job']"));
-                WebElement post = CHROME_DRIVER.findElement(By.xpath("//div[contains(@class, 'applied-select-all')]//button"));
-                post.click();
-                printRecommendJobs(jobs);
-                log.info("相似职位投递成功！");
-            } catch (NoSuchElementException e) {
-                log.error("没有匹配到相似职位...");
-            } catch (Exception e) {
-                log.error("相似职位投递异常！！！");
             }
-            // 投完了关闭当前窗口并切换至第一个窗口
-            CHROME_DRIVER.close();
-            CHROME_DRIVER.switchTo().window(tabs.get(0));
+            log.info("[Collect] Done. Collected {} jobs for keyword [{}]", allJobs.size(), keyword);
+
+            // Phase 2: Visit each job detail, AI judge, apply if match
+            String mainWindow = CHROME_DRIVER.getWindowHandle();
+            int applied = 0, skipped = 0, failed = 0;
+            for (int idx = 0; idx < allJobs.size(); idx++) {
+                if (isLimit) break;
+                String[] info = allJobs.get(idx);
+                String jName = info[0], jCompany = info[1], jSalary = info[2], jLocation = info[3], jUrl = info[4];
+                try {
+                    // Open job detail in new tab
+                    ((JavascriptExecutor) CHROME_DRIVER).executeScript("window.open(arguments[0], '_blank');", jUrl);
+                    SeleniumUtil.sleep(2);
+                    // Switch to new tab
+                    Set<String> handles = CHROME_DRIVER.getWindowHandles();
+                    String detailTab = "";
+                    for (String h : handles) {
+                        if (!h.equals(mainWindow)) { detailTab = h; break; }
+                    }
+                    if (detailTab.isEmpty()) { log.debug("Cannot open tab for {}", jName); continue; }
+                    CHROME_DRIVER.switchTo().window(detailTab);
+                    SeleniumUtil.sleep(1);
+
+                    String jobDetail = readJobDetail();
+                    log.info("[{}/{}] {} | {} | {} | {}", idx + 1, allJobs.size(), jName, jCompany, jSalary, jLocation);
+
+                    boolean shouldApply = false;
+                    try {
+                        shouldApply = AiService.shouldApplyZhiLian(jName, jCompany, jSalary, jLocation, jobDetail);
+                    } catch (Exception e) {
+                        log.warn("AI error: {}", e.getMessage());
+                    }
+
+                    if (shouldApply) {
+                        boolean ok = false;
+                        try { ok = applyOnDetailPage(); } catch (Exception e) { log.debug("Apply err: {}", e.getMessage()); }
+                        if (ok) {
+                            Job job = new Job();
+                            job.setJobName(jName);
+                            job.setSalary(jSalary);
+                            job.setCompanyName(jCompany);
+                            resultList.add(job);
+                            applied++;
+                            log.info("  => APPLIED: {} - {}", jName, jCompany);
+                        } else {
+                            failed++;
+                            log.info("  => AI match but apply failed: {}", jName);
+                        }
+                    } else {
+                        skipped++;
+                        log.info("  => AI skip: {}", jName);
+                    }
+                } catch (Exception e) {
+                    failed++;
+                    log.debug("Error: {} - {}", jName, e.getMessage());
+                } finally {
+                    // Close detail tab and switch back to main window
+                    try {
+                        Set<String> allHandles = CHROME_DRIVER.getWindowHandles();
+                        for (String h : allHandles) {
+                            if (!h.equals(mainWindow)) {
+                                CHROME_DRIVER.switchTo().window(h);
+                                CHROME_DRIVER.close();
+                            }
+                        }
+                        CHROME_DRIVER.switchTo().window(mainWindow);
+                    } catch (Exception ignore) {}
+                }
+            }
+            log.info("[Result] keyword [{}]: collected={}, applied={}, skipped={}, failed={}", keyword, allJobs.size(), applied, skipped, failed);
+        } catch (Exception e) {
+            log.info("Submit error: {}", e.getMessage());
+        }
+    }
+
+    private static String safeGetText(WebElement parent, String xpath) {
+        try {
+            return parent.findElement(By.xpath(xpath)).getText().trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static String readJobDetail() {
+        StringBuilder sb = new StringBuilder();
+        try {
+            // 获取整个详情页的文本内容
+            String pageText = (String) ((JavascriptExecutor) CHROME_DRIVER).executeScript(
+                "return document.body ? document.body.innerText : '';");
+            if (pageText != null && !pageText.isEmpty()) {
+                // 截取合理的长度，避免太长浪费token
+                if (pageText.length() > 3000) {
+                    pageText = pageText.substring(0, 3000);
+                }
+                sb.append(pageText);
+            }
+        } catch (Exception e) {
+            // 尝试备用方案
+            try {
+                // 尝试常见详情页选择器
+                String[] selectors = {
+                    ".describtion__detail-content",
+                    ".job-detail__content",
+                    ".job-summary",
+                    ".job-description",
+                    ".pos-ul",
+                    ".job_require",
+                    ".job-detail",
+                    ".describtion"
+                };
+                for (String sel : selectors) {
+                    try {
+                        WebElement el = CHROME_DRIVER.findElement(By.cssSelector(sel));
+                        String text = el.getText().trim();
+                        if (!text.isEmpty()) {
+                            sb.append(text);
+                            break;
+                        }
+                    } catch (Exception ignore) {}
+                }
+            } catch (Exception ex) {
+                log.warn("读取岗位详情失败: {}", ex.getMessage());
+            }
+        }
+        return sb.toString().trim();
+    }
+
+    /**
+     * 在详情页尝试投递
+     * @return 是否投递成功
+     */
+    private static boolean applyOnDetailPage() {
+        try {
+            // 查找详情页的投递按钮
+            String[] applySelectors = {
+                "button.apply-btn",
+                "button[class*='apply']",
+                "button[class*='Apply']",
+                ".apply-btn",
+                ".job-detail__apply",
+                "button.btn-apply",
+                ".btn--primary",
+                "button[data-zp-btn='Apply']"
+            };
+            
+            WebElement applyBtn = null;
+            for (String sel : applySelectors) {
+                try {
+                    List<WebElement> btns = CHROME_DRIVER.findElements(By.cssSelector(sel));
+                    for (WebElement btn : btns) {
+                        String text = btn.getText().trim();
+                        if (text.contains("投递") || text.contains("申请") || text.contains("立即") || text.contains("马上")) {
+                            applyBtn = btn;
+                            break;
+                        }
+                    }
+                    if (applyBtn != null) break;
+                } catch (Exception ignore) {}
+            }
+            
+            if (applyBtn == null) {
+                // 备用方案：查找所有按钮
+                try {
+                    List<WebElement> allBtns = CHROME_DRIVER.findElements(By.tagName("button"));
+                    for (WebElement btn : allBtns) {
+                        String text = btn.getText().trim();
+                        if ((text.contains("投递") || text.contains("申请职位") || text.contains("立即投递")) 
+                            && !text.contains("已投递")) {
+                            applyBtn = btn;
+                            break;
+                        }
+                    }
+                } catch (Exception ignore) {}
+            }
+
+            if (applyBtn != null) {
+                // 检查是否已投递
+                String btnText = applyBtn.getText().trim();
+                if (btnText.contains("已投递") || btnText.contains("已申请")) {
+                    log.info("该岗位已在详情页标记为已投递");
+                    return false;
+                }
+                
+                ((JavascriptExecutor) CHROME_DRIVER).executeScript("arguments[0].click();", applyBtn);
+                SeleniumUtil.sleep(2);
+                
+                // 检查投递结果
+                if (checkIsLimit()) {
+                    return false;
+                }
+                
+                // 检查弹窗
+                try {
+                    WebElement dialog = CHROME_DRIVER.findElement(By.cssSelector(".a-job-apply-workflow, .dialog, .modal"));
+                    String dialogText = dialog.getText();
+                    if (dialogText.contains("上限") || dialogText.contains("已达")) {
+                        isLimit = true;
+                        return false;
+                    }
+                    // 尝试关闭弹窗
+                    try {
+                        WebElement closeBtn = dialog.findElement(By.cssSelector("button, .close, .btn-close"));
+                        closeBtn.click();
+                        SeleniumUtil.sleep(1);
+                    } catch (Exception ignore) {}
+                } catch (Exception noDialog) {
+                    // 没有弹窗，正常
+                }
+                
+                return true;
+            } else {
+                log.info("详情页未找到投递按钮");
+                return false;
+            }
+        } catch (Exception e) {
+            log.info("详情页投递异常: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 关闭除主窗口外的所有标签页
+     */
+    private static void closeExtraTabs(String mainWindow) {
+        try {
+            Set<String> handles = CHROME_DRIVER.getWindowHandles();
+            for (String handle : handles) {
+                if (!handle.equals(mainWindow)) {
+                    try {
+                        CHROME_DRIVER.switchTo().window(handle);
+                        CHROME_DRIVER.close();
+                    } catch (Exception ignore) {}
+                }
+            }
+            CHROME_DRIVER.switchTo().window(mainWindow);
+        } catch (Exception e) {
+            try {
+                CHROME_DRIVER.switchTo().window(mainWindow);
+            } catch (Exception ignore) {}
+        }
+    }
+
+    private static void ensureMainWindow(String mainWindow) {
+        try {
+            // 先关闭多余的标签页
+            Set<String> handles = CHROME_DRIVER.getWindowHandles();
+            for (String handle : handles) {
+                if (!handle.equals(mainWindow)) {
+                    try {
+                        CHROME_DRIVER.switchTo().window(handle);
+                        CHROME_DRIVER.close();
+                    } catch (Exception ignore) {}
+                }
+            }
+            CHROME_DRIVER.switchTo().window(mainWindow);
+        } catch (Exception e) {
+            // 如果主窗口也失效了，尝试恢复
+            try {
+                Set<String> handles = CHROME_DRIVER.getWindowHandles();
+                if (!handles.isEmpty()) {
+                    CHROME_DRIVER.switchTo().window(handles.iterator().next());
+                }
+            } catch (Exception ignore) {}
         }
     }
 
@@ -171,12 +441,10 @@ public class ZhiLian {
 
     private static void setMaxPages() {
         try {
-            // 到底部
             ACTIONS.keyDown(Keys.CONTROL).sendKeys(Keys.END).keyUp(Keys.CONTROL).perform();
             WebElement inputElement = CHROME_DRIVER.findElement(By.className("soupager__pagebox__goinp"));
             inputElement.clear();
             inputElement.sendKeys("99999");
-            //使用 JavaScript 获取输入元素的当前值
             JavascriptExecutor js = CHROME_DRIVER;
             String modifiedValue = (String) js.executeScript("return arguments[0].value;", inputElement);
             maxPage = Integer.parseInt(modifiedValue);
@@ -184,28 +452,26 @@ public class ZhiLian {
             WebElement home = CHROME_DRIVER.findElement(By.xpath("//li[@class='listsort__item']"));
             ACTIONS.moveToElement(home).perform();
         } catch (Exception ignore) {
-            StackTraceElement element = Thread.currentThread().getStackTrace()[1];
-            log.info("setMaxPages@设置最大页数异常！({}:{})", element.getFileName(), element.getLineNumber());
-            log.info("设置默认最大页数50，如有需要请自行调整...");
+            log.info("设置最大页数异常，设置默认最大页数50...");
             maxPage = 50;
         }
     }
 
     private static void printRecommendJobs(List<WebElement> jobs) {
         jobs.forEach(j -> {
-            String jobName = j.findElement(By.xpath(".//*[contains(@class, 'recommend-job__position')]")).getText();
-            String salary = j.findElement(By.xpath(".//span[@class='recommend-job__demand__salary']")).getText();
-            String years = j.findElement(By.xpath(".//span[@class='recommend-job__demand__experience']")).getText().replaceAll("\n", " ");
-            String education = j.findElement(By.xpath(".//span[@class='recommend-job__demand__educational']")).getText().replaceAll("\n", " ");
-            String companyName = j.findElement(By.xpath(".//*[contains(@class, 'recommend-job__cname')]")).getText();
-            String companyTag = j.findElement(By.xpath(".//*[contains(@class, 'recommend-job__demand__cinfo')]")).getText().replaceAll("\n", " ");
+            String jn = j.findElement(By.xpath(".//*[contains(@class, 'recommend-job__position')]")).getText();
+            String s = j.findElement(By.xpath(".//span[@class='recommend-job__demand__salary']")).getText();
+            String y = j.findElement(By.xpath(".//span[@class='recommend-job__demand__experience']")).getText().replaceAll("\n", " ");
+            String ed = j.findElement(By.xpath(".//span[@class='recommend-job__demand__educational']")).getText().replaceAll("\n", " ");
+            String cn = j.findElement(By.xpath(".//*[contains(@class, 'recommend-job__cname')]")).getText();
+            String ct = j.findElement(By.xpath(".//*[contains(@class, 'recommend-job__demand__cinfo')]")).getText().replaceAll("\n", " ");
             Job job = new Job();
-            job.setJobName(jobName);
-            job.setSalary(salary);
-            job.setCompanyTag(companyTag);
-            job.setCompanyName(companyName);
-            job.setJobInfo(years + "·" + education);
-            log.info("投递【{}】公司【{}】岗位，薪资【{}】，要求【{}·{}】，规模【{}】", companyName, jobName, salary, years, education, companyTag);
+            job.setJobName(jn);
+            job.setSalary(s);
+            job.setCompanyTag(ct);
+            job.setCompanyName(cn);
+            job.setJobInfo(y + "·" + ed);
+            log.info("投递【{}】公司【{}】岗位，薪资【{}】，要求【{}·{}】，规模【{}】", cn, jn, s, y, ed, ct);
             resultList.add(job);
         });
     }

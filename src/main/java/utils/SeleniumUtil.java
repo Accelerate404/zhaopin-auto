@@ -1,6 +1,5 @@
 package utils;
 
-import boss.BossConfig;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.openqa.selenium.By;
@@ -78,21 +77,26 @@ public class SeleniumUtil {
                 log.info("你这什么破系统，没见过，别跑了!");
                 break;
         }
-        BossConfig config = BossConfig.init();
-        if (config.getDebugger()) {
-            options.addExtensions(new File("src/main/resources/xpathHelper.crx"));
-        } else {
-            options.addArguments("--disable-extensions");
-        }
+        options.addArguments("--disable-extensions");
+        // Use a dedicated persistent profile (not the main Chrome profile to avoid conflicts)
+        String profileDir = System.getProperty("user.home") + "/zhaopin-auto-chrome-profile";
+        options.addArguments("--user-data-dir=" + profileDir);
+        options.addArguments("--profile-directory=Default");
+        options.addArguments("--disable-blink-features=AutomationControlled");
+        options.addArguments("--disable-infobars");
+        options.addArguments("--disable-dev-shm-usage");
+        options.addArguments("--no-first-run");
+        options.addArguments("--no-default-browser-check");
+        options.addArguments("--disable-popup-blocking");
         GraphicsDevice[] screens = GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
         if (screens.length > 1) {
-            options.addArguments("--window-position=2800,1000"); //将窗口移动到副屏的起始位置
+            options.addArguments("--window-position=2800,1000");
         }
-//        options.addArguments("--headless"); //使用无头模式
 
         options.setExperimentalOption("excludeSwitches", new String[]{"enable-automation"});
-        options.setExperimentalOption("useAutomationExtension", false); // 禁用默认扩展
-        options.addArguments("user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36");
+        options.setExperimentalOption("useAutomationExtension", false);
+        options.addArguments("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36");
+        options.addArguments("--disable-features=IsolateOrigins,site-per-process");
 
 
         CHROME_DRIVER = new ChromeDriver(options);
@@ -329,7 +333,7 @@ public class SeleniumUtil {
         headersMap.put("sec-ch-ua", "\"Google Chrome\";v=\"135\", \"Not-A.Brand\";v=\"8\", \"Chromium\";v=\"135\"");
         headersMap.put("sec-ch-ua-mobile", "?0");
         headersMap.put("sec-ch-ua-platform", "\"macOS\"");
-        headersMap.put("user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36");
+        headersMap.put("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36");
         headersMap.put("accept-language", "zh-CN,zh;q=0.9");
         headersMap.put("referer", "https://www.zhipin.com/");
 

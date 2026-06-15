@@ -61,13 +61,7 @@ public class Job implements Serializable {
     }
 
     public String toString(Platform platform) {
-        if (platform == Platform.ZHILIAN) {
-            return String.format("【%s, %s, %s, %s, %s, %s, %s】", companyName, jobName, jobArea, companyTag, salary, recruiter, href);
-        }
-        if (platform == Platform.BOSS) {
-            return String.format("【%s, %s, %s, %s, %s, %s】", companyName, jobName, jobArea, salary, companyTag, recruiter);
-        }
-        return String.format("【%s, %s, %s, %s, %s, %s, %s】", companyName, jobName, jobArea, salary, companyTag, recruiter, href);
+        return String.format("【%s, %s, %s, %s, %s, %s, %s】", companyName, jobName, jobArea, companyTag, salary, recruiter, href);
     }
 }
 

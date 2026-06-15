@@ -10,16 +10,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.concurrent.*;
 
-/**
- * @author loks666
- * 项目链接: <a href="https://github.com/loks666/get_jobs">https://github.com/loks666/get_jobs</a>
- */
 @Slf4j
 public class AiService {
 
@@ -27,143 +21,130 @@ public class AiService {
     private static final String BASE_URL = dotenv.get("BASE_URL") + "/v1/chat/completions";
     private static final String API_KEY = dotenv.get("API_KEY");
     private static final String MODEL = dotenv.get("MODEL");
+    private static String RESUME_CACHE = null;
 
+    /**
+     * 从resume.md读取简历内容，带缓存
+     */
+    private static String loadResume() {
+        if (RESUME_CACHE != null) return RESUME_CACHE;
+        String[] paths = {"resume.md", "resume.txt", "../resume.md", "src/main/resources/resume.md"};
+        for (String p : paths) {
+            try {
+                java.io.File f = new java.io.File(p);
+                if (f.exists()) {
+                    RESUME_CACHE = new String(Files.readAllBytes(Paths.get(f.getAbsolutePath())), "UTF-8");
+                    log.info("Resume loaded from: {} ({} chars)", f.getAbsolutePath(), RESUME_CACHE.length());
+                    return RESUME_CACHE;
+                }
+            } catch (Exception ignore) {}
+        }
+        log.warn("No resume file found! AI matching will be less accurate.");
+        RESUME_CACHE = "";
+        return RESUME_CACHE;
+    }
 
     public static String sendRequest(String content) {
-        // 设置超时时间，单位：秒
-        int timeoutInSeconds = 60;  // 你可以修改这个变量来设置超时时间
-
-        // 创建 HttpClient 实例并设置超时
+        int timeoutInSeconds = 60;
         HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(timeoutInSeconds))  // 设置连接超时
+                .connectTimeout(Duration.ofSeconds(timeoutInSeconds))
                 .build();
-
-        // 构建 JSON 请求体
         JSONObject requestData = new JSONObject();
         requestData.put("model", MODEL);
         requestData.put("temperature", 0.5);
-
-        // 添加消息内容
         JSONArray messages = new JSONArray();
         JSONObject message = new JSONObject();
         message.put("role", "user");
         message.put("content", content);
         messages.put(message);
-
         requestData.put("messages", messages);
-
-        // 构建 HTTP 请求
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(BASE_URL))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + API_KEY)
                 .POST(HttpRequest.BodyPublishers.ofString(requestData.toString()))
                 .build();
-
-        // 创建线程池用于执行请求
         ExecutorService executor = Executors.newSingleThreadExecutor();
         Callable<HttpResponse<String>> task = () -> client.send(request, HttpResponse.BodyHandlers.ofString());
-
-        // 提交请求并控制超时
         Future<HttpResponse<String>> future = executor.submit(task);
         try {
-            // 使用 future.get 设置超时
             HttpResponse<String> response = future.get(timeoutInSeconds, TimeUnit.SECONDS);
-
             if (response.statusCode() == 200) {
-                // 解析响应体
                 log.info(response.body());
                 JSONObject responseObject = new JSONObject(response.body());
-                String requestId = responseObject.getString("id");
-                long created = responseObject.getLong("created");
-                String model = responseObject.getString("model");
-
-                // 解析返回的内容
-                JSONObject messageObject = responseObject.getJSONArray("choices")
+                String responseContent = responseObject.getJSONArray("choices")
                         .getJSONObject(0)
-                        .getJSONObject("message");
-                String responseContent = messageObject.getString("content");
-
-                // 解析 usage 部分
-                JSONObject usageObject = responseObject.getJSONObject("usage");
-                int promptTokens = usageObject.getInt("prompt_tokens");
-                int completionTokens = usageObject.getInt("completion_tokens");
-                int totalTokens = usageObject.getInt("total_tokens");
-
-                // 格式化时间
-                LocalDateTime createdTime = Instant.ofEpochSecond(created)
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDateTime();
-                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-                String formattedTime = createdTime.format(formatter);
-
-                log.info("请求ID: {}, 创建时间: {}, 模型名: {}, 提示词: {}, 补全: {}, 总用量: {}", requestId, formattedTime, model, promptTokens, completionTokens, totalTokens);
+                        .getJSONObject("message")
+                        .getString("content");
                 return responseContent;
             } else {
-                log.error("AI请求失败！状态码: {}", response.statusCode());
+                log.error("AI request failed: {}", response.statusCode());
             }
         } catch (TimeoutException e) {
-            log.error("请求超时！超时设置为 {} 秒", timeoutInSeconds);
+            log.error("AI request timeout: {} sec", timeoutInSeconds);
         } catch (Exception e) {
-            log.error("AI请求异常！", e);
+            log.error("AI request error!", e);
         } finally {
-            executor.shutdownNow();  // 关闭线程池
+            executor.shutdownNow();
         }
         return "";
     }
 
-
-    public static void main(String[] args) {
-        System.out.println(cleanBossDesc(".EwyXFHpFfseN{display:inline-block;width:0.1px;height:0.1px;overflow:hidden;visibility: hidden;}.FxpRjMznwNS{display:inline-block;font-size:0!important;width:1em;height:1em;visibility:hidden;line-height:0;}.QTsRdnap{display:inline-block;font-size:0!important;width:1em;height:1em;visibility:hidden;line-height:0;}.spBzTCGii{display:inline-block;font-size:0!important;width:1em;height:1em;visibility:hidden;line-height:0;}.DXpfskbRdfn{display:inline-block;width:0.1px;height:0.1px;overflow:hidden;visibility: hidden;}.snNcSPFFs{font-style:normal;font-weight:normal}.zjziXGAdnjK{font-style:normal;font-weight:normal}.CjmzfkfTmx{font-style:normal;font-weight:normal}.YYTWRZHhrm{font-style:normal;font-weight:normal}.cfAzXEKs{font-style:normal;font-weight:normal}岗位职责：\n" +
-                "kanzhun一、boss产品+AI的实BOSS直聘施与落地能力\n" +
-                "1、负责公司产品+AI的实施与落地，熟悉各基础大模型性能，熟练应用大模型关键技术，面向隧道股份各需求，协同规划产品落地路径，具备实施能力；\n" +
-                "2、负责聚焦场景和产品的大模型相关的训练工作，包括：需求分析、功能设计、数据集构建、模型训练、评估及优化等；\n" +
-                "3、熟悉包括RAG、指令数据构建、Prompt工程、模型Fine-tuning、Prompt Engineering等环节，实现大模型技术在领域内垂直场景的落地应用；\n" +
-                "4、熟悉NLP、CV、多模态等领域大模型结构、算法，具备追踪大模型领域内前沿的技术研究成果，包括但不局限预训练、强化学习、知识增强、分布式训练等，同时提出创新思路来推动升级的能力；\n" +
-                "5、具备优化计算、存储和网络性能的能力，以满足业务系统的资源需求，并设定具体的性能优化目标，如延迟、吞吐量、资源利用率等；在满足性能需求的前提下，优化计算、存储和网络资源的使用，降低总成本；\n" +
-                "6、对业务系统的效果进行持续调优，通过数据分析和系统改进，提升系统的性能和用户体验。\n" +
-                "二、项目管理与协作\n" +
-                "1、参与制定核心业务项目计划和需求分析，确保项目按时交付和达到高质量标准。\n" +
-                "带领项目成员进行端对端开发，制定项目计划、分配任务并指导项目成员完成开发工作。\n" +
-                "2、与跨部门团队紧密合作，包括开发人员、测试人员、产品经理等，共同推动项目的顺利进行。\n" +
-                "四、技术能力提升\n" +
-                "1、负责相关技术文档的撰写与整理。\n" +
-                "2、协同团队成员进行技术分享，促进***学习于经验交流。\n" +
-                "3、建立公司知识库，沉淀技术文档、***实践、案例分享等，方便企业内部日常学习与参考。\n" +
-                "\n" +
-                "任职资格：\n" +
-                "一、教育背景\n" +
-                "本科及以上学历，电子工程、计算机科学、人工智能等相关领域专业。\n" +
-                "二、工作经验\n" +
-                "1、具备3年以上AI相关开发经验或5年以上软件开发经验（优秀者可适当放宽工作年限要求）。\n" +
-                "2、具备Rerank、Embedding、Langchain、RAG等服务开发及部署经验者优先。\n" +
-                "具备大模型应用开发经验，在智能问答、代码review、代码续写、测试用例生成等方向有成功经验者优先。\n" +
-                "4、有大型互联网公司大规模机器学习平台相关研发落地经验者优先。\n" +
-                "三、专业知识\n" +
-                "1、熟悉主流大模型如GPT、Gemini、LLaMA、ChatGLM等及其原理，并能进行针对性模型开发工作；\n" +
-                "2、了解深度学习等技术，熟悉大模型训练、推理、量化和部署者优先；\n" +
-                "3、了解主流AI应用框架者（如TensorFlow、PyTorch、longchain等）优先；\n" +
-                "4、熟悉JAVA/C++/Go/Python任一语言，有完整的项目开发经验，具备核心模块设计和维护经验。有一定的算法工程化能力，能够实现算法/模型的工程化与应用部署；具有NLP相关技术经验者更佳；\n" +
-                "熟悉Agent框架，有优化能力，包括planing、action、tools use、memory等核心Agent能力的提升者优先；、了解深度学习等技术，熟悉大模型训练、推理、量化和部署者优先；\n" +
-                "四、能力要求\n" +
-                "1、具备良好的问题解决能力和逻辑思维，能独立分析并解决技术难题。\n" +
-                "2、具备良好的团队合作精神和沟通能力，能在跨部门协作中发挥积极作用。\n" +
-                "3、具备良好的学习能力和适应能力，能够快速掌握新技术和新知识。\n" +
-                "4、具备较强的抗压能力，能够适应一定频率的出差与加班，满足工作中的紧急任务需求。"));
+    /**
+     * AI判断智联招聘岗位是否匹配用户背景，基于简历全面匹配
+     * @return true=应该投递, false=不投递
+     */
+    public static boolean shouldApplyZhiLian(String jobName, String company, String salary, String location, String jobDetail) {
+        String detail = jobDetail.length() > 2000 ? jobDetail.substring(0, 2000) : jobDetail;
+        String resumeContent = loadResume();
+        String prompt = "你是求职顾问。请根据求职者简历和岗位信息，判断是否应该投递。\n\n" +
+            "【求职者简历】\n" + resumeContent + "\n\n" +
+            "【岗位】\n" +
+            "- 名称：" + jobName + "\n" +
+            "- 公司：" + company + "\n" +
+            "- 薪资：" + salary + "\n" +
+            "- 地址：" + location + "\n" +
+            "- 详情：\n" + detail + "\n\n" +
+            "【匹配规则（宽松匹配，多方向投递）】\n" +
+            "1. 必须是实习岗（包含实习/intern等），否则拒绝\n" +
+            "2. 以下方向任意匹配一个即可投递：\n" +
+            "   a. 供应链/物流/冷链/仓储/采购等物流方向\n" +
+            "   b. 跨境电商/电商运营/产品管理等跨境方向\n" +
+            "   c. 数据分析/数据运营/商业分析/策略分析等数据方向\n" +
+            "   d. AI/人工智能/大数据/智慧物流等新技术方向\n" +
+            "   e. 管理咨询/战略规划/项目管理等管理方向\n" +
+            "   f. 运营/市场/产品/客服等互联网/电商岗\n" +
+            "   g. 任何与物流管理、管理科学、数据分析相关的实习岗\n" +
+            "3. 要求不能过高：明确要求3年+经验或硕士+则拒绝\n" +
+            "4. 即使岗位名不完全匹配，但工作内容与背景有交集就应投递\n" +
+            "5. 学历过滤：岗位要求大专及以下则拒绝；实习岗要求本科+、经验不限或低要求即可投递\n" +
+            "6. 地址判断：如果地址包含天河、天河区、猅彗、广州东站、猋州等天河区域关键词则优先匹配；如果地址包含南沙、番禺、花都、增城、从化、白云等远区域则拒绝；地址不明或其他区域可以匹配\n\n" +
+            "只回JSON：" + "{\"match\":true,\"reason\":\"简短原因\"}" + " 或 " + "{\"match\":false,\"reason\":\"简短原因\"}";
         try {
-            // 示例：发送请求
-            String content = "你好";
-            String response = sendRequest(content);
-            System.out.println("AI回复: " + response);
+            String response = sendRequest(prompt);
+            if (response != null && !response.isEmpty()) {
+                response = response.trim();
+                if (response.contains("{")) {
+                    int s = response.indexOf("{");
+                    int e = response.lastIndexOf("}");
+                    if (s >= 0 && e > s) response = response.substring(s, e + 1);
+                }
+                JSONObject json = new JSONObject(response);
+                boolean match = json.optBoolean("match", false);
+                String reason = json.optString("reason", "");
+                log.info("AI判断: {} | 原因: {}", match ? "匹配" : "不匹配", reason);
+                return match;
+            }
         } catch (Exception e) {
-            log.error("AI异常！");
+            log.warn("AI判断异常: {}", e.getMessage());
         }
+        return false;
     }
 
     public static String cleanBossDesc(String raw) {
         return raw.replaceAll("kanzhun|BOSS直聘|来自BOSS直聘", "")
                 .replaceAll("[\\u200b-\\u200d\\uFEFF]", "")
-                .replaceAll("<[^>]+>", "") // 如果有HTML标签就用
+                .replaceAll("<[^>]+>", "")
                 .replaceAll("\\s+", " ")
                 .trim();
     }
