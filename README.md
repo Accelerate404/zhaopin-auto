@@ -1,73 +1,64 @@
 # zhaopin-auto
 
-AI-powered automated job application tool for ZhiLian (智联招聘).
+基于 AI 的智联招聘自动投递工具。
 
-> Based on [get_jobs](https://github.com/loks666/get_jobs) by loks666. This fork focuses exclusively on ZhiLian with AI-powered job matching.
+> 基于 [get_jobs](https://github.com/loks666/get_jobs) by loks666 的 fork，专注于智联招聘 + AI 岗位匹配。
 
-## Features
+## 功能
 
-- **AI Job Matching**: Reads your resume and job details, uses AI to decide whether to apply
-- **Two-Phase Strategy**: Fast collect up to 200 jobs, then AI-judge each one
-- **Smart Filtering**: Internship-only, education filter, district priority
-- **Configurable**: Any OpenAI-compatible API (DeepSeek, Xiaomi MiMo, OpenAI, etc.)
-- **Resume-Driven**: Edit `resume.md` with your resume, AI reads it for matching
+- **AI 岗位匹配**：读取简历和岗位详情，由 AI 判断是否投递
+- **两阶段策略**：先快速收集最多 200 个岗位，再逐个 AI 判断
+- **智能筛选**：仅实习、学历过滤、天河区优先
+- **灵活配置**：支持任意 OpenAI 兼容 API（DeepSeek、小米 MiMo、OpenAI 等）
+- **简历驱动**：编辑 `resume.md` 填入简历，AI 据此匹配
 
-## Quick Start
+## 快速开始
 
 ```bash
-# 1. Clone
-git clone <this-repo> zhaopin-auto
+# 1. 克隆
+git clone https://github.com/Accelerate404/zhaopin-auto.git
 cd zhaopin-auto
 
-# 2. Configure API
+# 2. 配置 API
 cp .env_template .env
-# Edit .env with your API key
+# 编辑 .env 填入你的 API Key
 
-# 3. Fill resume
-# Edit resume.md with your resume content
+# 3. 填写简历
+# 编辑 resume.md 填入你的简历内容
 
-# 4. Configure search
-# Edit src/main/resources/config.yaml (city, keywords, salary)
+# 4. 配置搜索条件
+# 编辑 src/main/resources/config.yaml（城市、关键词、薪资）
 
-# 5. Place ChromeDriver matching your Chrome version
-# Download: https://googlechromelabs.github.io/chrome-for-testing/
+# 5. 放置 ChromeDriver
+# 下载与 Chrome 版本匹配的 chromedriver：https://googlechromelabs.github.io/chrome-for-testing/
 
-# 6. Build & Run
+# 6. 构建 & 运行
 mvn clean package -DskipTests
 start.bat
 ```
 
-## How It Works
+## 工作流程
 
 ```
-Search ZhiLian → Collect 200 job URLs → For each job:
-  ├── Open detail page
-  ├── Read job description
-  ├── AI compares with your resume
-  ├── Match? → Apply
-  └── No match? → Skip
+搜索智联招聘 → 收集 200 个岗位链接 → 逐个处理：
+  ├── 打开岗位详情页
+  ├── 读取岗位描述
+  ├── AI 对比简历判断匹配度
+  ├── 匹配 → 投递
+  └── 不匹配 → 跳过
 ```
 
-## Known Issues
-
-- **Anti-bot**: ZhiLian may trigger CAPTCHA. Wait a few hours if blocked.
-- **ChromeDriver**: Must manually match Chrome version.
-- **JDK 17 required**: JDK 21+ incompatible.
-- **Windows only**: `start.bat` is Windows-specific.
-- **No GUI**: All config is file-based.
-- **DOM fragility**: If ZhiLian changes their HTML, selectors break.
-
-## Configuration
+## 配置说明
 
 ### `.env` - AI API
 
 ```env
 BASE_URL=https://api.deepseek.com
-API_KEY=your-key
+API_KEY=your-api-key-here
 MODEL=deepseek-chat
 ```
 
-### `config.yaml` - Search
+### `config.yaml` - 搜索条件
 
 ```yaml
 zhilian:
@@ -78,21 +69,30 @@ zhilian:
     - "数据分析"
 ```
 
-### `resume.md` - Your Resume
+### `resume.md` - 个人简历
 
-Fill with your actual resume content. AI reads this for matching.
+填入你的实际简历内容，AI 读取此文件进行匹配。
 
-## Requirements
+## 环境要求
 
 - JDK 17
 - Maven 3.6+
-- Google Chrome + matching ChromeDriver
+- Google Chrome + 匹配版本的 ChromeDriver
 
-## Credits
+## 已知问题
 
-- Original project: [get_jobs](https://github.com/loks666/get_jobs) by loks666
-- This fork: Focused on ZhiLian + AI matching
+- **反爬机制**：智联可能触发验证码，被封后等几小时再试
+- **ChromeDriver**：需手动匹配 Chrome 版本
+- **仅 JDK 17**：JDK 21+ 不兼容
+- **仅 Windows**：`start.bat` 为 Windows 专用
+- **无界面**：所有配置基于文件
+- **DOM 依赖**：智联改版后选择器可能失效
 
-## License
+## 致谢
+
+- 原项目：[get_jobs](https://github.com/loks666/get_jobs) by loks666
+- 本 fork：专注智联招聘 + AI 匹配
+
+## 许可证
 
 MIT
