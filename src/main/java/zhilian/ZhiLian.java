@@ -15,6 +15,7 @@ import java.util.Set;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.Arrays;
 
 import static utils.Bot.sendMessageByTime;
 import static utils.Constant.*;
@@ -167,6 +168,14 @@ public class ZhiLian {
                 if (isLimit) break;
                 String[] info = allJobs.get(idx);
                 String jName = info[0], jCompany = info[1], jSalary = info[2], jLocation = info[3], jUrl = info[4];
+
+                // === 地址预过滤：不在通勤范围内直接跳过 ===
+                if (!isInCommuteArea(jLocation)) {
+                    skipped++;
+                    log.info("[{}/{}] SKIP(area): {} | {} | {}", idx + 1, allJobs.size(), jName, jCompany, jLocation);
+                    continue;
+                }
+
                 try {
                     // Open job detail in new tab
                     ((JavascriptExecutor) CHROME_DRIVER).executeScript("window.open(arguments[0], '_blank');", jUrl);
@@ -182,6 +191,14 @@ public class ZhiLian {
                     SeleniumUtil.sleep(1);
 
                     String jobDetail = readJobDetail();
+
+                    // === 内容关键词过滤：包含电话/销售等直接跳过 ===
+                    if (hasBlacklistedContent(jName, jobDetail)) {
+                        skipped++;
+                        log.info("[{}/{}] SKIP(keywords): {} | {}", idx + 1, allJobs.size(), jName, jCompany);
+                        continue;
+                    }
+
                     log.info("[{}/{}] {} | {} | {} | {}", idx + 1, allJobs.size(), jName, jCompany, jSalary, jLocation);
 
                     boolean shouldApply = false;
@@ -231,6 +248,56 @@ public class ZhiLian {
         } catch (Exception e) {
             log.info("Submit error: {}", e.getMessage());
         }
+    }
+
+    // === 地址预过滤：根据求职者的通勤范围自定义 ===
+    // 使用方式：根据你的位置修改以下列表
+    // ALLOWED_AREAS: 全区可投递的区域（如天河、越秀）
+    // ALLOWED_SUB_AREAS: 部分区域可投递的具体片区
+    // EXCLUDED_KEYWORDS: 明确排除的区域
+    private static final List<String> ALLOWED_AREAS = Arrays.asList("天河", "越秀");
+    private static final List<String> ALLOWED_SUB_AREAS = Arrays.asList(
+            "黄沙", "文化公园",           // 荔湾区
+            "同和", "京溪",               // 白云区
+            "黄陂", "金峰", "暹岗", "苏元", // 黄埔科学城西段
+            "海珠广场"                    // 海珠区
+    );
+    private static final List<String> EXCLUDED_KEYWORDS = Arrays.asList(
+            "花都", "从化", "番禺", "南沙", "佛山",
+            "芳村", "滘口", "花地湾",
+            "嘉禾望岗", "永泰", "白云新城", "龙归", "钟落潭",
+            "琶洲", "客村", "赤岗", "江南西", "沥滘",
+            "香雪", "云埔", "萝岗", "黄埔东"
+    );
+
+    private static boolean isInCommuteArea(String location) {
+        if (location == null || location.trim().isEmpty()) return true; // 地址不明则投递
+        for (String ex : EXCLUDED_KEYWORDS) {
+            if (location.contains(ex)) return false;
+        }
+        for (String area : ALLOWED_AREAS) {
+            if (location.contains(area)) return true;
+        }
+        for (String sub : ALLOWED_SUB_AREAS) {
+            if (location.contains(sub)) return true;
+        }
+        return false;
+    }
+
+    // === 内容关键词过滤：命中则跳过，不调用AI ===
+    private static final List<String> CONTENT_BLACKLIST = Arrays.asList(
+            "电话销售", "电话客服", "电话邀约", "电话营销",
+            "陌拜", "地推", "扫楼", "摆摊",
+            "催收", "贷款销售", "pos机",
+            "主播", "直播带货", "娱乐直播"
+    );
+
+    private static boolean hasBlacklistedContent(String jobName, String jobDetail) {
+        String combined = (jobName == null ? "" : jobName) + (jobDetail == null ? "" : jobDetail);
+        for (String kw : CONTENT_BLACKLIST) {
+            if (combined.contains(kw)) return true;
+        }
+        return false;
     }
 
     private static String safeGetText(WebElement parent, String xpath) {

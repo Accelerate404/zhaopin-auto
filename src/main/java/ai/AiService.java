@@ -23,9 +23,6 @@ public class AiService {
     private static final String MODEL = dotenv.get("MODEL");
     private static String RESUME_CACHE = null;
 
-    /**
-     * 从resume.md读取简历内容，带缓存
-     */
     private static String loadResume() {
         if (RESUME_CACHE != null) return RESUME_CACHE;
         String[] paths = {"resume.md", "resume.txt", "../resume.md", "src/main/resources/resume.md"};
@@ -90,10 +87,6 @@ public class AiService {
         return "";
     }
 
-    /**
-     * AI判断智联招聘岗位是否匹配用户背景，基于简历全面匹配
-     * @return true=应该投递, false=不投递
-     */
     public static boolean shouldApplyZhiLian(String jobName, String company, String salary, String location, String jobDetail) {
         String detail = jobDetail.length() > 2000 ? jobDetail.substring(0, 2000) : jobDetail;
         String resumeContent = loadResume();
@@ -114,12 +107,12 @@ public class AiService {
             "   d. AI/人工智能/大数据/智慧物流等新技术方向\n" +
             "   e. 管理咨询/战略规划/项目管理等管理方向\n" +
             "   f. 运营/市场/产品/客服等互联网/电商岗\n" +
-            "   g. 任何与物流管理、管理科学、数据分析相关的实习岗\n" +
-            "3. 要求不能过高：明确要求3年+经验或硕士+则拒绝\n" +
+            "   g. 物流管理/管理科学与工程/运营管理等本硕专业相关岗\n" +
+            "3. 要求不能过高：明确要求3年及以上经验则拒绝；要求硕士学历可接受（求职者研一在读）\n" +
             "4. 即使岗位名不完全匹配，但工作内容与背景有交集就应投递\n" +
-            "5. 学历过滤：岗位要求大专及以下则拒绝；实习岗要求本科+、经验不限或低要求即可投递\n" +
-            "6. 地址判断：如果地址包含天河、天河区、猅彗、广州东站、猋州等天河区域关键词则优先匹配；如果地址包含南沙、番禺、花都、增城、从化、白云等远区域则拒绝；地址不明或其他区域可以匹配\n\n" +
-            "只回JSON：" + "{\"match\":true,\"reason\":\"简短原因\"}" + " 或 " + "{\"match\":false,\"reason\":\"简短原因\"}";
+            "5. 学历过滤：要求大专及以下则拒绝；要求本科及以上或硕士均可接受\n" +
+            "6. 地址判断（宽松）：地址不明则投递；非广州则拒绝；广州其他区域均可投递\n\n" +
+            "只返回JSON：" + "{\"match\":true,\"reason\":\"简短原因\"}" + " 或 " + "{\"match\":false,\"reason\":\"简短原因\"}";
         try {
             String response = sendRequest(prompt);
             if (response != null && !response.isEmpty()) {

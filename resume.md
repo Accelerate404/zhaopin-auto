@@ -1,20 +1,23 @@
-# Resume Content
+# 你的姓名 - 简历
 
-Fill in your resume content here. The AI will use this to judge whether job postings match your background.
+## 基本信息
+- 姓名：你的姓名
+- 学历：本科 XX大学 XX专业，研究生在读 XX大学 XX专业
+- 目标城市：广州
+- 意向方向：供应链、数据分析、电商运营、AI、管理咨询等
+- 优势：学习能力强，乐于接受新事物
+- 找实习/校招
 
-Suggested sections to include:
-- Name
-- Education (school, major, year)
-- Research interests
-- Technical skills
-- Projects / internship experience
-- Job search preferences (city, direction, internship/full-time)
+## 项目经历
+1. 项目名称 — 简要描述（技术栈）：做了什么，成果是什么
+2. 项目名称 — 简要描述（技术栈）：做了什么，成果是什么
 
----
+## 技术能力
+- Python、Java、SQL、Excel 等
+- 了解 AI/大模型应用开发
 
-Replace below with your actual resume:
+## 实习经历
+- 公司名称 · 岗位名称：负责什么，做了什么
 
-Name: Zhang San
-Education: XX University XX Major Bachelor/Master
-Target: XX City XX Direction Internship
-...
+## 校园经历
+- 组织名称 · 职务：做了什么

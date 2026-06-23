@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import io.github.cdimascio.dotenv.Dotenv;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.hc.client5.http.fluent.Request;
 
 import java.io.File;
 import java.io.IOException;
@@ -29,17 +28,14 @@ public class Bot {
 
     static {
         // 加载环境变量
-        Dotenv dotenv = Dotenv
-                .configure()
-                .directory("/src/main/resources")
-                .load();
+        Dotenv dotenv = Dotenv.load();
         HOOK_URL = dotenv.get("HOOK_URL");
         BARK_URL = dotenv.get("BARK_URL");
 
         // 使用 Jackson 加载 config.yaml 配置
         try {
             ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
-            HashMap<String, Object> config = mapper.readValue(new File("/src/main/resources/config.yaml"), new TypeReference<HashMap<String, Object>>() {
+            HashMap<String, Object> config = mapper.readValue(new File("src/main/resources/config.yaml"), new TypeReference<HashMap<String, Object>>() {
             });
             log.info("YAML 配置内容: {}", config);
 
@@ -82,12 +78,13 @@ public class Bot {
         }
         // 发送HTTP请求
         try {
-            String response = Request.post(HOOK_URL)
-                    .bodyString("{\"msgtype\": \"text\", \"text\": {\"content\": \"" + message + "\"}}",
-                            org.apache.hc.core5.http.ContentType.APPLICATION_JSON)
-                    .execute()
-                    .returnContent()
-                    .asString();
+            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+            java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(HOOK_URL))
+                    .header("Content-Type", "application/json")
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString("{\"msgtype\": \"text\", \"text\": {\"content\": \"" + message + "\"}}"))
+                    .build();
+            String response = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString()).body();
             log.info("消息推送成功: {}", response);
         } catch (Exception e) {
             log.error("消息推送失败: {}", e.getMessage());
@@ -112,10 +109,12 @@ public class Bot {
             String barkRequestUrl = String.format("%s/%s/%s", BARK_URL, encodedTitle, encodedMessage);
             System.out.println("barkRequestUrl = " + barkRequestUrl);
 
-            String response = Request.get(barkRequestUrl)
-                    .execute()
-                    .returnContent()
-                    .asString();
+            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+            java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(barkRequestUrl))
+                    .GET()
+                    .build();
+            String response = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString()).body();
             log.info("Bark消息推送成功: {}", response);
         } catch (Exception e) {
             log.error("Bark消息推送失败: {}", e.getMessage());
