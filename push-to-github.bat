@@ -16,7 +16,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo Step 1: Creating GitHub repo...
-gh repo create zhaopin-auto --public --source=. --remote=origin --push --description "AI-powered ZhiLian auto apply tool. Based on get_jobs by loks666."
+gh repo create zhaopin-auto --public --source=. --remote=origin --push --description "MCP-powered ZhiLian auto apply agent. Based on get_jobs by loks666."
 
 if %errorlevel% neq 0 (
     echo.

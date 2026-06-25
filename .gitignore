@@ -22,6 +22,7 @@ Thumbs.db
 
 # Chrome profile
 zhaopin-auto-chrome-profile/
+profile/
 
 # Excel data
 *.xlsx
@@ -35,3 +36,9 @@ chromedriver.exe
 chromedriver
 src/main/resources/chromedriver.exe
 src/main/resources/chromedriver
+
+# User data (contains personal info)
+data/
+resume.md
+preferences.md
+commute.json

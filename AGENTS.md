@@ -1,174 +1,110 @@
-# zhaopin-auto — AI Agent Deployment Guide
+# get_jobs — 智联招聘 AI Agent
 
-> This document is written for AI Agents to automatically download, configure, and launch this project.
+> 本文档是给 AI Agent 读的。当你看到这个文件时，说明用户希望你帮他在智联招聘上找工作。
 
-## Overview
+## 你能做什么
 
-Java + Selenium automated job application tool for ZhiLian (智联招聘). Core flow:
+你有以下 MCP 工具可以调用：
 
-```
-Search job listings → Open job detail → AI reads detail + matches resume → Apply if match, skip if not
-```
+### 搜索与投递
+- `zhilian_search(keywords, city, salary, max_results)` — 搜索岗位
+- `zhilian_get_detail(url)` — 获取岗位详情
+- `zhilian_apply(url)` — 投递岗位
 
-Each job triggers an AI API call (5-15s delay), naturally avoiding rate limits.
+### 会话管理
+- `zhilian_check_session()` — 检查登录状态
+- `zhilian_login()` — 触发扫码登录（会打开浏览器）
 
-## Requirements
+### 配置管理
+- `get_config()` / `update_config(...)` — 读写搜索配置
+- `get_preferences()` / `save_preferences_file(...)` — 读写偏好画像
+- `get_resume()` / `save_resume_file(...)` — 读写简历
+- `get_commute()` / `save_commute_file(...)` — 读写通勤范围
+- `get_history()` — 查看投递历史
 
-| Dependency | Version | Purpose |
-|-----------|---------|---------|
-| JDK | 17 (required, 21+ incompatible) | Compile & run |
-| Maven | 3.6+ | Build project |
-| Google Chrome | Match chromedriver version | Automation browser |
+## 工作流程
 
-### JDK 17
+### 第一步：了解用户需求
 
-- **Windows**: https://www.azul.com/downloads/?version=java-17-lts&os=windows&architecture=x86-64-bit&package=jdk
-- **macOS**: `brew install --cask zulu@17`
-- **Linux**: `apt install openjdk-17-jdk`
+用对话方式收集以下信息（如果用户没说清楚）：
 
-### ChromeDriver
+1. **城市**：在哪里找工作？
+2. **方向**：想找什么方向的实习/工作？（AI、数据、供应链、产品等）
+3. **薪资**：期望薪资范围？
+4. **通勤**：哪些区域可以接受？哪些太远不想去？
 
-Must match Chrome major version. Place in `src/main/resources/chromedriver.exe` (Windows) or `src/main/resources/chromedriver` (macOS/Linux).
+### 第二步：配置
 
-Check Chrome version: `chrome://version`
-Download: https://googlechromelabs.github.io/chrome-for-testing/
+根据用户回答，调用工具生成配置：
 
-## Setup
+1. 调用 `update_config()` 设置关键词、城市、薪资
+2. 调用 `save_commute_file()` 设置通勤范围
+3. 如果用户愿意，帮生成 `save_preferences_file()` 和 `save_resume_file()`
 
-### 1. Clone
+### 第三步：登录
 
-```bash
-git clone <repo-url> zhaopin-auto
-cd zhaopin-auto
-```
+1. 调用 `zhilian_check_session()` 检查登录状态
+2. 如果未登录，调用 `zhilian_login()` 触发扫码
+3. 提示用户扫码
 
-### 2. Configure AI API
+### 第四步：搜索与投递
 
-```bash
-cp .env_template .env
-```
+1. 调用 `zhilian_search()` 获取岗位列表
+2. **你来判断**哪些岗位匹配用户需求（这是你的能力，不需要工具）
+3. 对匹配的岗位调用 `zhilian_get_detail()` 获取详情
+4. 确认后调用 `zhilian_apply()` 投递
 
-Edit `.env` with your API credentials:
+### 第五步：反馈
 
-```env
-BASE_URL=https://api.deepseek.com
-API_KEY=your-api-key-here
-MODEL=deepseek-chat
-```
+- 汇报投递结果
+- 如果有被拒的岗位，分析原因并调整搜索方向
+- 询问用户是否继续搜索更多岗位
 
-Supports any OpenAI-compatible API (Xiaomi MiMo, DeepSeek, OpenAI, etc.)
+## 判断标准
 
-### 3. Fill Resume
+投递前你需要综合判断：
 
-Edit `resume.md` with your resume content. The AI reads this to judge job matching.
+1. **岗位方向**：是否属于用户目标方向
+2. **技术匹配**：岗位要求的技术栈用户是否具备
+3. **公司质量**：是否为正规公司（警惕销售型小公司、皮包公司）
+4. **通勤距离**：是否在用户可接受范围内
+5. **岗位含金量**：工作内容是否有实际价值
 
-### 4. Configure Search
+## 注意事项
 
-Edit `src/main/resources/config.yaml`:
+- 每次搜索会打开浏览器，完成后自动关闭
+- 扫码登录需要用户手动操作，你无法代替
+- 智联有每日投递上限（约100个），注意节奏
+- 遇到反爬验证（验证码），提示用户手动处理
+- 所有投递记录保存在 `data/history.json`，可以查看历史
 
-```yaml
-zhilian:
-  cityCode: "广州"        # City name
-  salary: "0,5000"          # Salary range (yuan), "0,5000" = 0-5000
-  keywords:                 # Search keywords
-    - "供应链实习"
-    - "数据分析"
-```
+## 配置文件说明
 
-### 5. Place ChromeDriver
+| 文件 | 用途 | 格式 |
+|------|------|------|
+| `config.yaml` | 搜索关键词、城市、薪资 | YAML |
+| `preferences.md` | 求职偏好画像 | Markdown |
+| `resume.md` | 求职者简历 | Markdown |
+| `commute.json` | 通勤范围（结构化） | JSON |
+| `data/history.json` | 投递历史 | JSON |
+| `profile/` | 浏览器数据（保持登录） | 目录 |
 
-Put chromedriver in `src/main/resources/` matching your Chrome version.
+## 通勤范围配置格式 (commute.json)
 
-### 6. Build
-
-```bash
-mvn clean package -DskipTests
-```
-
-Output: `target/get_jobs-v2.0.1-jar-with-dependencies.jar`
-
-### 7. Run
-
-```bash
-# Windows
-start.bat
-
-# Or directly
-java -cp target/get_jobs-v2.0.1-jar-with-dependencies.jar zhilian.ZhiLian
-```
-
-First run opens browser for QR code login. Cookie is saved for subsequent runs.
-
-## Project Structure
-
-```
-zhaopin-auto/
-├── .env_template          # API config template
-├── .gitignore
-├── AGENTS.md              # This document
-├── pom.xml                # Maven build config
-├── resume.md              # Your resume (AI reads this)
-├── start.bat              # Windows one-click start
-└── src/main/
-    ├── java/
-    │   ├── zhilian/          # Core (4 files)
-    │   ├── ai/               # AI matching (3 files)
-    │   └── utils/            # Utilities (7 files)
-    └── resources/
-        ├── config.yaml           # Search config
-        └── chromedriver.exe      # Browser driver
+```json
+{
+  "city": "广州",
+  "allowed": [
+    {"area": "天河区", "type": "full"},
+    {"area": "越秀区", "type": "partial", "subareas": ["黄花岗","区庄","淘金","东山口"]},
+    {"area": "黄埔区", "type": "line", "line": "6号线", "from": "黄陂", "to": "金峰"}
+  ],
+  "excluded": ["海珠","荔湾","番禺","花都","从化","佛山"],
+  "unknown_pass": true
+}
 ```
 
-## Key Files
-
-### AiService.java
-
-`shouldApplyZhiLian(jobName, company, salary, location, jobDetail)`:
-- Reads resume from `resume.md` (cached after first load)
-- Sends prompt with resume + job info to AI API
-- Returns `{match: true/false, reason: "reason"}`
-- Rules: must be internship, direction match, Tianhe priority, no high requirements, no low education
-
-### ZhiLian.java
-
-1. Start Chrome, login via QR code
-2. For each keyword: collect up to 200 job URLs (Phase 1)
-3. Visit each job detail, AI judge, apply if match (Phase 2)
-4. Close detail tab after each job
-
-### config.yaml
-
-- `cityCode`: City name in Chinese
-- `salary`: Range like "0,5000" or "none"
-- `keywords`: Array of search terms
-
-## Customization
-
-### Change Target City/Area
-
-Edit the prompt in `AiService.java` `shouldApplyZhiLian` method.
-
-### Change Matching Rules
-
-Edit the prompt rules section in `AiService.java`.
-
-### Add Other Platforms
-
-This project focuses on ZhiLian only. For other platforms, use the original get_jobs project.
-
-## Known Issues & Limitations
-
-1. **Anti-bot detection**: ZhiLian may show CAPTCHA verification. Using a dedicated Chrome profile helps but doesn't fully solve it. If blocked, wait a few hours and try again.
-2. **ChromeDriver version**: Must exactly match Chrome version. Auto-download not supported.
-3. **JDK 17 only**: JDK 21+ causes compilation errors due to API changes.
-4. **Chinese encoding**: Log output may show garbled text on Windows terminals. This is a display issue only.
-5. **Rate limits**: ~100 applications/day per ZhiLian account. The AI judgment delay helps but doesn't guarantee avoidance.
-6. **Resume quality**: Matching accuracy depends heavily on resume.md content quality. Fill it thoroughly.
-7. **No GUI config**: All configuration is file-based. No graphical interface.
-8. **Windows only tested**: start.bat is Windows-specific. macOS/Linux users need to run java command directly.
-9. **Single-threaded**: Processes one job at a time. Not optimized for speed.
-10. **ZhiLian DOM changes**: If ZhiLian updates their page structure, selectors will break. Requires manual fix.
-
-## Credits
-
-Based on [get_jobs](https://github.com/loks666/get_jobs) by loks666. This fork focuses exclusively on ZhiLian with AI-powered job matching.
+- `type: "full"` — 该区域全域可投递
+- `type: "partial"` — 只有指定子区域可投递
+- `type: "line"` — 地铁沿线，from/to 之间的站点可投递
+- `unknown_pass` — 地址为空或不明时是否通过

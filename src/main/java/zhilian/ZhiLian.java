@@ -47,6 +47,12 @@ public class ZhiLian {
                 return;
             }
             CHROME_DRIVER.get(getSearchUrl(keyword, 1));
+            // Cookie过期检测：如果被重定向到登录页，自动重新登录
+            if (isSessionExpired()) {
+                log.info("Cookie已过期，重新登录...");
+                reLogin();
+                CHROME_DRIVER.get(getSearchUrl(keyword, 1));
+            }
             submitJobs(keyword);
 
         });
@@ -80,6 +86,7 @@ public class ZhiLian {
     }
 
     private static final int MAX_COLLECT = 200;
+    private static final int BATCH_SIZE = 5;
 
     private static void submitJobs(String keyword) {
         if (isLimit) return;
@@ -161,15 +168,17 @@ public class ZhiLian {
             }
             log.info("[Collect] Done. Collected {} jobs for keyword [{}]", allJobs.size(), keyword);
 
-            // Phase 2: Visit each job detail, AI judge, apply if match
+            // Phase 2A: Fast filter + collect details (no AI call)
             String mainWindow = CHROME_DRIVER.getWindowHandle();
-            int applied = 0, skipped = 0, failed = 0;
+            int skipped = 0;
+            List<String[]> pendingJobs = new ArrayList<>();
+            List<String[]> pendingDetails = new ArrayList<>();
+
             for (int idx = 0; idx < allJobs.size(); idx++) {
                 if (isLimit) break;
                 String[] info = allJobs.get(idx);
                 String jName = info[0], jCompany = info[1], jSalary = info[2], jLocation = info[3], jUrl = info[4];
 
-                // === 地址预过滤：不在通勤范围内直接跳过 ===
                 if (!isInCommuteArea(jLocation)) {
                     skipped++;
                     log.info("[{}/{}] SKIP(area): {} | {} | {}", idx + 1, allJobs.size(), jName, jCompany, jLocation);
@@ -177,10 +186,8 @@ public class ZhiLian {
                 }
 
                 try {
-                    // Open job detail in new tab
                     ((JavascriptExecutor) CHROME_DRIVER).executeScript("window.open(arguments[0], '_blank');", jUrl);
                     SeleniumUtil.sleep(2);
-                    // Switch to new tab
                     Set<String> handles = CHROME_DRIVER.getWindowHandles();
                     String detailTab = "";
                     for (String h : handles) {
@@ -192,46 +199,17 @@ public class ZhiLian {
 
                     String jobDetail = readJobDetail();
 
-                    // === 内容关键词过滤：包含电话/销售等直接跳过 ===
                     if (hasBlacklistedContent(jName, jobDetail)) {
                         skipped++;
                         log.info("[{}/{}] SKIP(keywords): {} | {}", idx + 1, allJobs.size(), jName, jCompany);
-                        continue;
-                    }
-
-                    log.info("[{}/{}] {} | {} | {} | {}", idx + 1, allJobs.size(), jName, jCompany, jSalary, jLocation);
-
-                    boolean shouldApply = false;
-                    try {
-                        shouldApply = AiService.shouldApplyZhiLian(jName, jCompany, jSalary, jLocation, jobDetail);
-                    } catch (Exception e) {
-                        log.warn("AI error: {}", e.getMessage());
-                    }
-
-                    if (shouldApply) {
-                        boolean ok = false;
-                        try { ok = applyOnDetailPage(); } catch (Exception e) { log.debug("Apply err: {}", e.getMessage()); }
-                        if (ok) {
-                            Job job = new Job();
-                            job.setJobName(jName);
-                            job.setSalary(jSalary);
-                            job.setCompanyName(jCompany);
-                            resultList.add(job);
-                            applied++;
-                            log.info("  => APPLIED: {} - {}", jName, jCompany);
-                        } else {
-                            failed++;
-                            log.info("  => AI match but apply failed: {}", jName);
-                        }
                     } else {
-                        skipped++;
-                        log.info("  => AI skip: {}", jName);
+                        pendingJobs.add(info);
+                        pendingDetails.add(new String[]{jName, jCompany, jSalary, jLocation, jobDetail});
+                        log.info("[{}/{}] READY: {} | {} | {} | {}", idx + 1, allJobs.size(), jName, jCompany, jSalary, jLocation);
                     }
                 } catch (Exception e) {
-                    failed++;
-                    log.debug("Error: {} - {}", jName, e.getMessage());
+                    log.debug("Read error: {} - {}", jName, e.getMessage());
                 } finally {
-                    // Close detail tab and switch back to main window
                     try {
                         Set<String> allHandles = CHROME_DRIVER.getWindowHandles();
                         for (String h : allHandles) {
@@ -244,7 +222,82 @@ public class ZhiLian {
                     } catch (Exception ignore) {}
                 }
             }
-            log.info("[Result] keyword [{}]: collected={}, applied={}, skipped={}, failed={}", keyword, allJobs.size(), applied, skipped, failed);
+            log.info("[Phase A] keyword [{}]: collected={}, filtered={}, pending AI={}", keyword, allJobs.size(), skipped, pendingJobs.size());
+
+            // Phase 2B: Batch AI evaluate + apply
+            int applied = 0, aiSkipped = 0, failed = 0;
+            for (int batchStart = 0; batchStart < pendingJobs.size(); batchStart += BATCH_SIZE) {
+                if (isLimit) break;
+                int batchEnd = Math.min(batchStart + BATCH_SIZE, pendingJobs.size());
+                List<String[]> batchDetails = pendingDetails.subList(batchStart, batchEnd);
+                List<String[]> batchJobs = pendingJobs.subList(batchStart, batchEnd);
+
+                log.info("[Phase B] 批量评估第{}-{}个岗位（共{}个）", batchStart + 1, batchEnd, pendingJobs.size());
+
+                List<Boolean> results;
+                try {
+                    results = AiService.shouldApplyBatch(batchDetails);
+                } catch (Exception e) {
+                    log.warn("批量AI判断异常: {}", e.getMessage());
+                    results = new ArrayList<>();
+                    for (int i = 0; i < batchDetails.size(); i++) results.add(false);
+                }
+
+                for (int i = 0; i < batchJobs.size(); i++) {
+                    if (isLimit) break;
+                    String[] info = batchJobs.get(i);
+                    String jName = info[0], jCompany = info[1], jSalary = info[2], jLocation = info[3], jUrl = info[4];
+                    boolean shouldApply = i < results.size() && results.get(i);
+
+                    if (shouldApply) {
+                        try {
+                            ((JavascriptExecutor) CHROME_DRIVER).executeScript("window.open(arguments[0], '_blank');", jUrl);
+                            SeleniumUtil.sleep(2);
+                            Set<String> handles = CHROME_DRIVER.getWindowHandles();
+                            String detailTab = "";
+                            for (String h : handles) {
+                                if (!h.equals(mainWindow)) { detailTab = h; break; }
+                            }
+                            if (detailTab.isEmpty()) { failed++; continue; }
+                            CHROME_DRIVER.switchTo().window(detailTab);
+                            SeleniumUtil.sleep(1);
+
+                            boolean ok = false;
+                            try { ok = applyOnDetailPage(); } catch (Exception e) { log.debug("Apply err: {}", e.getMessage()); }
+                            if (ok) {
+                                Job job = new Job();
+                                job.setJobName(jName);
+                                job.setSalary(jSalary);
+                                job.setCompanyName(jCompany);
+                                resultList.add(job);
+                                applied++;
+                                log.info("  => APPLIED: {} - {}", jName, jCompany);
+                            } else {
+                                failed++;
+                                log.info("  => AI match but apply failed: {}", jName);
+                            }
+                        } catch (Exception e) {
+                            failed++;
+                            log.debug("Apply error: {} - {}", jName, e.getMessage());
+                        } finally {
+                            try {
+                                Set<String> allHandles = CHROME_DRIVER.getWindowHandles();
+                                for (String h : allHandles) {
+                                    if (!h.equals(mainWindow)) {
+                                        CHROME_DRIVER.switchTo().window(h);
+                                        CHROME_DRIVER.close();
+                                    }
+                                }
+                                CHROME_DRIVER.switchTo().window(mainWindow);
+                            } catch (Exception ignore) {}
+                        }
+                    } else {
+                        aiSkipped++;
+                        log.info("  => AI skip: {}", jName);
+                    }
+                }
+            }
+            log.info("[Result] keyword [{}]: collected={}, applied={}, skipped={}, aiSkipped={}, failed={}", keyword, allJobs.size(), applied, skipped, aiSkipped, failed);
         } catch (Exception e) {
             log.info("Submit error: {}", e.getMessage());
         }
@@ -257,17 +310,19 @@ public class ZhiLian {
     // EXCLUDED_KEYWORDS: 明确排除的区域
     private static final List<String> ALLOWED_AREAS = Arrays.asList("天河", "越秀");
     private static final List<String> ALLOWED_SUB_AREAS = Arrays.asList(
-            "黄沙", "文化公园",           // 荔湾区
-            "同和", "京溪",               // 白云区
-            "黄陂", "金峰", "暹岗", "苏元", // 黄埔科学城西段
-            "海珠广场"                    // 海珠区
+            "黄花岗", "区庄", "淘金", "东山口",  // 越秀区东段
+            "同和", "京溪",                      // 白云区
+            "黄陂", "金峰"                       // 黄埔6号线沿线
     );
     private static final List<String> EXCLUDED_KEYWORDS = Arrays.asList(
             "花都", "从化", "番禺", "南沙", "佛山",
+            "海珠", "荔湾",
+            "猎德", "珠江新城",
+            "北京路",
             "芳村", "滘口", "花地湾",
             "嘉禾望岗", "永泰", "白云新城", "龙归", "钟落潭",
-            "琶洲", "客村", "赤岗", "江南西", "沥滘",
-            "香雪", "云埔", "萝岗", "黄埔东"
+            "琶洲", "客村", "赤岗", "江南西", "沥滘", "中大",
+            "香雪", "云埔", "萝岗", "黄埔东", "苏元"
     );
 
     private static boolean isInCommuteArea(String location) {
@@ -571,5 +626,21 @@ public class ZhiLian {
 
     private static boolean isLoginRequired() {
         return !CHROME_DRIVER.getCurrentUrl().contains("i.zhaopin.com");
+    }
+
+    private static boolean isSessionExpired() {
+        String url = CHROME_DRIVER.getCurrentUrl();
+        return url.contains("passport.zhaopin.com") || url.contains("login") || isLoginRequired();
+    }
+
+    private static void reLogin() {
+        try {
+            // 清除旧cookie
+            CHROME_DRIVER.manage().deleteAllCookies();
+            login();
+            log.info("重新登录成功");
+        } catch (Exception e) {
+            log.error("重新登录失败: {}", e.getMessage());
+        }
     }
 }
